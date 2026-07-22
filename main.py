@@ -505,3 +505,20 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(main())
+    @dp.message(Command("reset"))
+async def reset_command(message: Message):
+
+    if message.from_user.id != config.ADMIN_ID:
+        return
+
+
+    database.reset_limits()
+
+
+    await message.answer(
+        """
+🔄 Лимиты заявок сброшены!
+
+Все пользователи снова могут отправлять заявки ❤️
+        """
+    )
