@@ -7,5 +7,5 @@ BOT_TOKEN = os.getenv(
 
 ADMIN_ID = int(os.getenv(
     "ADMIN_ID",
-    "581230803"
+    "5812308083"
 ))
