@@ -114,3 +114,34 @@ def save_message(user_id, sender, text):
 
     db.commit()
     db.close()
+    import time
+
+
+last_requests = {}
+
+
+def check_limit(user_id):
+
+    now = time.time()
+
+    if user_id not in last_requests:
+        return True
+
+    passed = now - last_requests[user_id]
+
+    if passed >= 43200:
+        return True
+
+    return False
+
+
+
+def set_limit(user_id):
+
+    last_requests[user_id] = time.time()
+
+
+
+def reset_limits():
+
+    last_requests.clear()
