@@ -5,20 +5,24 @@ def connect():
     return sqlite3.connect("database.db")
 
 
-def add_user(user_id):
+def add_user(user_id, username):
     db = connect()
     cursor = db.cursor()
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users(
         id INTEGER PRIMARY KEY,
-        user_id INTEGER UNIQUE
+        user_id INTEGER UNIQUE,
+        username TEXT
     )
     """)
 
     cursor.execute(
-        "INSERT OR IGNORE INTO users(user_id) VALUES (?)",
-        (user_id,)
+        """
+        INSERT OR REPLACE INTO users(user_id, username)
+        VALUES (?,?)
+        """,
+        (user_id, username)
     )
 
     db.commit()
