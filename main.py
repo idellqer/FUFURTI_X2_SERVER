@@ -18,6 +18,7 @@ import database
 import config
 
 
+closed_users = set()
 bot = Bot(token=config.BOT_TOKEN)
 
 dp = Dispatcher()
@@ -441,6 +442,8 @@ async def close(
     if request:
 
         user_id = request[1]
+        
+        closed_users.add(user_id)
 
         database.close_request(
             request_id
