@@ -5,7 +5,9 @@ def connect():
     return sqlite3.connect("database.db")
 
 
+
 def add_user(user_id, username):
+
     db = connect()
     cursor = db.cursor()
 
@@ -29,31 +31,9 @@ def add_user(user_id, username):
     db.close()
 
 
-def save_request(user_id, amount, photo):
-    db = connect()
-    cursor = db.cursor()
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS requests(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        amount TEXT,
-        photo TEXT,
-        status TEXT
-    )
-    """)
+def create_request(user_id, amount, photo):
 
-    cursor.execute(
-        """
-        INSERT INTO requests(user_id, amount, photo, status)
-        VALUES(?,?,?,?)
-        """,
-        (user_id, amount, photo, "new")
-    )
-
-    db.commit()
-    db.close()
-    def create_request(user_id, amount, photo):
     db = connect()
     cursor = db.cursor()
 
@@ -92,3 +72,40 @@ def save_request(user_id, amount, photo):
     db.close()
 
     return request_id
+
+
+
+def get_request(req_id):
+
+    db = connect()
+    cursor = db.cursor()
+
+    cursor.execute(
+        "SELECT * FROM requests WHERE id=?",
+        (req_id,)
+    )
+
+    result = cursor.fetchone()
+
+    db.close()
+
+    return result
+
+
+
+def close_request(req_id):
+
+    db = connect()
+    cursor = db.cursor()
+
+    cursor.execute(
+        """
+        UPDATE requests
+        SET status='closed'
+        WHERE id=?
+        """,
+        (req_id,)
+    )
+
+    db.commit()
+    db.close()
