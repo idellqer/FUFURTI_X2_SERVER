@@ -116,7 +116,8 @@ async def start(message: Message):
 
 @dp.message(F.text == "✨ Новая заявка")
 async def new_request(message: Message, state: FSMContext):
-        if not database.check_limit(message.from_user.id):
+
+    if not database.check_limit(message.from_user.id):
 
         await message.answer(
             """
@@ -129,6 +130,7 @@ async def new_request(message: Message, state: FSMContext):
         )
 
         return
+
 
     await state.set_state(RequestState.waiting_amount)
 
