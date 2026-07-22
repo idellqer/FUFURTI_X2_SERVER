@@ -230,6 +230,9 @@ async def send_request(
     photo = data["photo"]
 
     request_id = database.create_request(
+        database.set_limit(
+    callback.from_user.id
+)
         callback.from_user.id,
         amount,
         photo
