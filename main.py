@@ -472,7 +472,7 @@ async def reset_limits(
 
 async def main():
 
-    await database.create_tables()
+    database.create_tables()
 
     await dp.start_polling(bot)
 
