@@ -1,147 +1,244 @@
 import sqlite3
+import time
 
 
-DB_NAME = "database.db"
+DB = "database.db"
 
+
+# =========================
+# ПОДКЛЮЧЕНИЕ
+# =========================
 
 def connect():
-    return sqlite3.connect(DB_NAME)
+    return sqlite3.connect(DB)
 
+
+
+# =========================
+# СОЗДАНИЕ ТАБЛИЦ
+# =========================
 
 def create_tables():
+
     db = connect()
     cursor = db.cursor()
 
+
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT
+    CREATE TABLE IF NOT EXISTS users(
+        id INTEGER PRIMARY KEY,
+        username TEXT,
+        last_request INTEGER DEFAULT 0
     )
     """)
 
+
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS requests (
+    CREATE TABLE IF NOT EXISTS requests(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         amount TEXT,
-        photo_id TEXT,
-        status TEXT DEFAULT 'new'
+        photo TEXT,
+        status TEXT
     )
     """)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        sender TEXT,
-        text TEXT
-    )
-    """)
 
     db.commit()
     db.close()
 
+
+
+# =========================
+# ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ
+# =========================
 
 def add_user(user_id, username):
+
     db = connect()
     cursor = db.cursor()
 
-    cursor.execute("""
-    INSERT OR IGNORE INTO users(user_id, username)
-    VALUES (?, ?)
-    """, (user_id, username))
+
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO users
+        (id, username)
+        VALUES (?,?)
+        """,
+        (
+            user_id,
+            username
+        )
+    )
+
 
     db.commit()
     db.close()
 
 
-def create_request(user_id, amount, photo_id):
+
+# =========================
+# ПРОВЕРКА ЛИМИТА 12 ЧАСОВ
+# =========================
+
+def check_limit(user_id):
+
     db = connect()
     cursor = db.cursor()
 
-    cursor.execute("""
-    INSERT INTO requests(user_id, amount, photo_id)
-    VALUES (?, ?, ?)
-    """, (user_id, amount, photo_id))
 
-    db.commit()
+    cursor.execute(
+        """
+        SELECT last_request
+        FROM users
+        WHERE id=?
+        """,
+        (user_id,)
+    )
 
-    request_id = cursor.lastrowid
-
-    db.close()
-
-    return request_id
-
-
-def get_request(request_id):
-    db = connect()
-    cursor = db.cursor()
-
-    cursor.execute("""
-    SELECT * FROM requests
-    WHERE id=?
-    """, (request_id,))
 
     result = cursor.fetchone()
 
     db.close()
 
-    return result
 
-
-def close_request(request_id):
-    db = connect()
-    cursor = db.cursor()
-
-    cursor.execute("""
-    UPDATE requests
-    SET status='closed'
-    WHERE id=?
-    """, (request_id,))
-
-    db.commit()
-    db.close()
-
-
-def save_message(user_id, sender, text):
-    db = connect()
-    cursor = db.cursor()
-
-    cursor.execute("""
-    INSERT INTO messages(user_id, sender, text)
-    VALUES (?, ?, ?)
-    """, (user_id, sender, text))
-
-    db.commit()
-    db.close()
-    import time
-
-
-last_requests = {}
-
-
-def check_limit(user_id):
-
-    now = time.time()
-
-    if user_id not in last_requests:
+    if not result:
         return True
 
-    passed = now - last_requests[user_id]
 
-    if passed >= 43200:
+    last = result[0]
+
+
+    if last == 0:
         return True
+
+
+    now = int(time.time())
+
+
+    if now - last >= 43200:
+        return True
+
 
     return False
 
 
 
+# =========================
+# УСТАНОВИТЬ ЛИМИТ
+# =========================
+
 def set_limit(user_id):
 
-    last_requests[user_id] = time.time()
+    db = connect()
+    cursor = db.cursor()
 
 
+    cursor.execute(
+        """
+        UPDATE users
+        SET last_request=?
+        WHERE id=?
+        """,
+        (
+            int(time.time()),
+            user_id
+        )
+    )
+
+
+    db.commit()
+    db.close()
+
+
+
+# =========================
+# СОЗДАНИЕ ЗАЯВКИ
+# =========================
+
+def create_request(
+        user_id,
+        amount,
+        photo
+):
+
+    db = connect()
+    cursor = db.cursor()
+
+
+    cursor.execute(
+        """
+        INSERT INTO requests
+        (
+        user_id,
+        amount,
+        photo,
+        status
+        )
+        VALUES (?,?,?,?)
+        """,
+        (
+            user_id,
+            amount,
+            photo,
+            "open"
+        )
+    )
+
+
+    request_id = cursor.lastrowid
+
+
+    db.commit()
+    db.close()
+
+
+    return request_id
+
+
+
+# =========================
+# ЗАКРЫТЬ ЗАЯВКУ
+# =========================
+
+def close_request(request_id):
+
+    db = connect()
+    cursor = db.cursor()
+
+
+    cursor.execute(
+        """
+        UPDATE requests
+        SET status='closed'
+        WHERE id=?
+        """,
+        (request_id,)
+    )
+
+
+    db.commit()
+    db.close()
+
+
+
+# =========================
+# СБРОС ВСЕХ ЛИМИТОВ
+# =========================
 
 def reset_limits():
 
-    last_requests.clear()
+    db = connect()
+    cursor = db.cursor()
+
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET last_request=0
+        """
+    )
+
+
+    db.commit()
+    db.close()
