@@ -1,83 +1,132 @@
 import asyncio
-from aiogram import Bot,Dispatcher,types,F
-from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
-from config import BOT_TOKEN,ADMIN_ID
-from database import add_request
 
-bot=Bot(BOT_TOKEN)
-def admin_keyboard(uid):
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
+from aiogram.filters import Command, CommandStart
+
+from config import BOT_TOKEN, ADMIN_ID
+import database
+
+
+bot = Bot(BOT_TOKEN)
+
+dp = Dispatcher()
+
+
+# временное хранение шагов пользователей
+user_state = {}
+
+# активный чат админа
+admin_chat = {}
+
+
+
+# =====================
+# КЛАВИАТУРЫ
+# =====================
+
+
+def main_menu():
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="🟢 Новая заявка")
+            ],
+            [
+                KeyboardButton(text="📄 Моя заявка")
+            ]
+        ],
+        resize_keyboard=True
+    )
+
+
+
+def admin_menu():
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ Принять",
-                    callback_data=f"accept_{uid}"
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отклонить",
-                    callback_data=f"reject_{uid}"
+                    text="📋 Заявки",
+                    callback_data="requests"
                 )
             ]
         ]
     )
-dp=Dispatcher()
-data={}
 
-@dp.message(Command("start"))
-async def start(m:types.Message):
-    kb=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📝 Новая заявка",callback_data="new")]])
-    await m.answer("FUFURTI X2\nСоздайте заявку",reply_markup=kb)
 
-@dp.callback_query(F.data=="new")
-async def new(c):
-    data[c.from_user.id]={}
-    await c.message.answer("Введите количество голды или стоимость скинов:")
+
+# =====================
+# СТАРТ
+# =====================
+
+
+@dp.message(CommandStart())
+async def start(message: Message):
+
+    database.add_user(
+        message.from_user.id,
+        message.from_user.username
+    )
+
+
+    await message.answer(
+        "👋 Добро пожаловать в FUFURTI X2\n\n"
+        "Выберите действие:",
+        reply_markup=main_menu()
+    )
+
+
+# =====================
+# НОВАЯ ЗАЯВКА
+# =====================
+
+
+@dp.message(F.text=="🟢 Новая заявка")
+async def new_request(message: Message):
+
+    user_state[message.from_user.id] = {
+        "step":"amount"
+    }
+
+
+    await message.answer(
+        "Введите количество голды или стоимость скинов:"
+    )
+
+
+
+# =====================
+# ВВОД ГОЛДЫ
+# =====================
+
 
 @dp.message(F.text)
-async def text(m):
-    if m.from_user.id in data and "amount" not in data[m.from_user.id]:
-        data[m.from_user.id]["amount"]=m.text
-        await m.answer("Отправьте скриншот")
+async def amount(message: Message):
 
-@dp.message(F.photo)
-async def photo(m):
-    uid=m.from_user.id
-    if uid in data:
-        add_request(uid,data[uid]["amount"],m.photo[-1].file_id)
-        await m.answer("Заявка отправлена на проверку")
-        await bot.send_photo(
-    ADMIN_ID,
-    m.photo[-1].file_id,
-    caption=f"📩 Новая заявка\n\n👤 ID: {uid}\n💰 Сумма: {data[uid]['amount']}",
-    reply_markup=admin_keyboard(uid)
-)
+    uid = message.from_user.id
 
-async def main():
-    await dp.start_polling(bot)
-@dp.callback_query()
-async def admin_action(c):
-    action, uid = c.data.split("_")
 
-    if action == "accept":
-        await bot.send_message(
-            int(uid),
-            "✅ Ваша заявка принята!"
-        )
+    if uid in user_state:
 
-        await c.message.edit_caption(
-            caption=c.message.caption + "\n\n✅ ПРИНЯТО"
-        )
+        if user_state[uid]["step"]=="amount":
 
-    elif action == "reject":
-        await bot.send_message(
-            int(uid),
-            "❌ Ваша заявка отклонена."
-        )
+            user_state[uid]["amount"] = message.text
+            user_state[uid]["step"]="photo"
 
-        await c.message.edit_caption(
-            caption=c.message.caption + "\n\n❌ ОТКЛОНЕНО"
-        )
 
-    await c.answer()
-asyncio.run(main())
+            await message.answer(
+                "Теперь отправьте скриншот.\n\n"
+                "На нём должна быть видна голда "
+                "или скины стоимостью не меньше указанного количества."
+            )
+
+            return
