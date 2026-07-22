@@ -1,10 +1,14 @@
 import asyncio
+import logging
+import sqlite3
+import time
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
     CallbackQuery,
     InlineKeyboardMarkup,
-    InlineKeyboardButton,
+    InlineKeyboardButton
 )
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -14,26 +18,37 @@ import config
 import database
 
 
-bot = Bot(config.BOT_TOKEN)
+logging.basicConfig(level=logging.INFO)
+
+
+bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
 
-# =========================
+ADMIN_ID = config.ADMIN_ID
+
+
+# ==========================
 # СОСТОЯНИЯ
-# =========================
+# ==========================
 
 class RequestState(StatesGroup):
     waiting_amount = State()
     waiting_photo = State()
 
 
-class ChatState(StatesGroup):
+class AdminState(StatesGroup):
     waiting_message = State()
 
 
-# =========================
-# МЕНЮ
-# =========================
+# пользователь, которому сейчас пишет админ
+admin_reply = {}
+
+
+
+# ==========================
+# КЛАВИАТУРЫ
+# ==========================
 
 def main_menu():
 
@@ -49,9 +64,56 @@ def main_menu():
     )
 
 
-# =========================
+
+def send_request_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📨 Отправить заявку",
+                    callback_data="send_request"
+                )
+            ]
+        ]
+    )
+
+
+
+def admin_keyboard(user_id):
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="💬 Написать пользователю",
+                    callback_data=f"write_{user_id}"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="❌ Закрыть заявку",
+                    callback_data=f"close_{user_id}"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🔄 Сбросить лимиты",
+                    callback_data="reset_limits"
+                )
+            ]
+
+        ]
+    )
+
+
+
+# ==========================
 # СТАРТ
-# =========================
+# ==========================
 
 @dp.message(Command("start"))
 async def start(message: Message):
@@ -61,23 +123,27 @@ async def start(message: Message):
         message.from_user.username
     )
 
+
     await message.answer(
         """
 👋 Добро пожаловать!
 
 Здесь вы можете оставить заявку на удвоение голды.
 
-Перед отправкой заявки внимательно подготовьте скриншот вашего аккаунта ❤️
+Перед созданием заявки подготовьте:
+⭐ количество голды
+📸 скриншот подтверждения
 
-Выберите действие ниже 👇
+Нажмите кнопку ниже, чтобы начать 👇
         """,
         reply_markup=main_menu()
     )
 
 
-# =========================
+
+# ==========================
 # НОВАЯ ЗАЯВКА
-# =========================
+# ==========================
 
 @dp.callback_query(F.data == "new_request")
 async def new_request(
@@ -88,41 +154,45 @@ async def new_request(
     user_id = callback.from_user.id
 
 
-    if not database.check_limit(user_id):
+    if database.check_limit(user_id):
 
         await callback.message.answer(
             """
-⏳ Вы уже отправляли заявку недавно ❤️
+⏳ Вы уже создавали заявку недавно.
 
-Повторная отправка будет доступна через 12 часов.
-
-Спасибо за понимание 🙏
+Новая заявка будет доступна через 12 часов ❤️
             """
         )
 
+        await callback.answer()
         return
 
 
-    await state.set_state(RequestState.waiting_amount)
+
+    await state.set_state(
+        RequestState.waiting_amount
+    )
 
 
     await callback.message.answer(
         """
-🔥 Отлично, начинаем оформление заявки!
+🔥 Отлично, начинаем оформление!
 
 Введите количество голды или количество голды в скинах, которые хотите удвоить:
 
 Например:
-500 голды
-или
-1200 голды в скинах
+1000 голды
         """
     )
 
 
-# =========================
-# ПОЛУЧЕНИЕ КОЛИЧЕСТВА
-# =========================
+    await callback.answer()
+
+
+
+# ==========================
+# ПОЛУЧЕНИЕ ГОЛДЫ
+# ==========================
 
 @dp.message(RequestState.waiting_amount)
 async def get_amount(
@@ -142,22 +212,22 @@ async def get_amount(
 
     await message.answer(
         """
-📸 Отлично!
+📸 Теперь отправьте скриншот.
 
-Теперь отправьте скриншот, где видно:
-
-✅ количество голды на балансе
+На нём должна быть видна:
+⭐ ваша голда на балансе
 или
-✅ ваши скины, стоимость которых не меньше указанного количества.
+⭐ стоимость ваших скинов
 
-После отправки появится кнопка подтверждения ❤️
+Сумма должна быть не меньше той, которую вы указали.
         """
     )
 
 
-# =========================
+
+# ==========================
 # ПОЛУЧЕНИЕ ФОТО
-# =========================
+# ==========================
 
 @dp.message(
     RequestState.waiting_photo,
@@ -168,20 +238,11 @@ async def get_photo(
         state: FSMContext
 ):
 
+    data = await state.get_data()
+
+
     await state.update_data(
         photo=message.photo[-1].file_id
-    )
-
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📨 Отправить заявку",
-                    callback_data="send_request"
-                )
-            ]
-        ]
     )
 
 
@@ -189,13 +250,13 @@ async def get_photo(
         """
 ✅ Скриншот получен!
 
-Проверьте данные и нажмите кнопку ниже, чтобы отправить заявку.
+Проверьте данные и отправьте заявку.
         """,
-        reply_markup=keyboard
+        reply_markup=send_request_keyboard()
     )
-# =========================
+# ==========================
 # ОТПРАВКА ЗАЯВКИ
-# =========================
+# ==========================
 
 @dp.callback_query(F.data == "send_request")
 async def send_request(
@@ -208,7 +269,6 @@ async def send_request(
     amount = data["amount"]
     photo = data["photo"]
 
-
     request_id = database.create_request(
         callback.from_user.id,
         amount,
@@ -216,151 +276,126 @@ async def send_request(
     )
 
 
-    database.set_limit(
-        callback.from_user.id
-    )
+    await callback.message.answer(
+        """
+✅ Заявка успешно отправлена!
 
+Ожидайте проверки ❤️
 
-    admin_keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💬 Написать пользователю",
-                    callback_data=f"chat_{callback.from_user.id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❌ Закрыть заявку",
-                    callback_data=f"close_{request_id}"
-                )
-            ]
-        ]
+Если потребуется дополнительная информация — мы напишем вам.
+        """
     )
 
 
     await bot.send_photo(
-        config.ADMIN_ID,
+        ADMIN_ID,
         photo,
         caption=f"""
-📩 Новая заявка #{request_id}
+🔥 Новая заявка #{request_id}
 
 👤 Пользователь:
-@{callback.from_user.username}
+ID: {callback.from_user.id}
+Username: @{callback.from_user.username}
 
-🪙 Количество:
+⭐ Количество:
 {amount}
-
-Проверьте заявку 👇
         """,
-        reply_markup=admin_keyboard
-    )
-
-
-    await callback.message.answer(
-        """
-✅ Ваша заявка успешно отправлена!
-
-Администратор проверит её и свяжется с вами ❤️
-
-Спасибо за ожидание 🙏
-        """
+        reply_markup=admin_keyboard(
+            callback.from_user.id
+        )
     )
 
 
     await state.clear()
+    await callback.answer()
 
 
 
-# =========================
-# ЗАКРЫТИЕ ЗАЯВКИ
-# =========================
+# ==========================
+# СООБЩЕНИЯ ОТ ПОЛЬЗОВАТЕЛЯ АДМИНУ
+# ==========================
 
-@dp.callback_query(F.data.startswith("close_"))
-async def close_request(
+@dp.message()
+async def user_message(
+        message: Message
+):
+
+    if message.from_user.id == ADMIN_ID:
+        return
+
+
+    await bot.send_message(
+        ADMIN_ID,
+        f"""
+💬 Сообщение от пользователя:
+
+ID:
+{message.from_user.id}
+
+Username:
+@{message.from_user.username}
+
+Текст:
+{message.text}
+        """
+    )
+
+
+
+# ==========================
+# АДМИН НАЖАЛ НАПИСАТЬ
+# ==========================
+
+@dp.callback_query(F.data.startswith("write_"))
+async def write_user(
         callback: CallbackQuery
 ):
-
-    if callback.from_user.id != config.ADMIN_ID:
-        return
-
-
-    request_id = int(
-        callback.data.split("_")[1]
-    )
-
-
-    database.close_request(request_id)
-
-
-    await callback.message.answer(
-        """
-❌ Заявка закрыта.
-
-Пользователь получил уведомление.
-        """
-    )
-
-
-
-# =========================
-# НАЧАТЬ ОБЩЕНИЕ
-# =========================
-
-@dp.callback_query(F.data.startswith("chat_"))
-async def start_chat(
-        callback: CallbackQuery,
-        state: FSMContext
-):
-
-    if callback.from_user.id != config.ADMIN_ID:
-        return
-
 
     user_id = int(
         callback.data.split("_")[1]
     )
 
 
-    await state.update_data(
-        chat_user=user_id
-    )
-
-
-    await state.set_state(
-        ChatState.waiting_message
-    )
+    admin_reply[callback.from_user.id] = user_id
 
 
     await callback.message.answer(
         """
-💬 Напишите сообщение пользователю.
+✍️ Напишите сообщение пользователю.
 
-Оно будет отправлено ему прямо в боте.
+Оно будет отправлено ему напрямую.
         """
     )
 
 
+    await callback.answer()
 
-# =========================
-# ОТПРАВКА СООБЩЕНИЯ ПОЛЬЗОВАТЕЛЮ
-# =========================
 
-@dp.message(ChatState.waiting_message)
-async def send_chat_message(
-        message: Message,
-        state: FSMContext
+
+# ==========================
+# ОТПРАВКА СООБЩЕНИЯ АДМИНА
+# ==========================
+
+@dp.message()
+async def admin_message(
+        message: Message
 ):
 
-    data = await state.get_data()
+    if message.from_user.id != ADMIN_ID:
+        return
 
-    user_id = data["chat_user"]
+
+    if ADMIN_ID not in admin_reply:
+        return
+
+
+    user_id = admin_reply[ADMIN_ID]
 
 
     await bot.send_message(
         user_id,
         f"""
-💬 Сообщение от администратора:
+💬 Сообщение от администрации:
 
 {message.text}
         """
@@ -368,55 +403,81 @@ async def send_chat_message(
 
 
     await message.answer(
+        "✅ Сообщение отправлено пользователю."
+    )
+
+
+
+# ==========================
+# ЗАКРЫТИЕ ЗАЯВКИ
+# ==========================
+
+@dp.callback_query(F.data.startswith("close_"))
+async def close_request(
+        callback: CallbackQuery
+):
+
+    user_id = int(
+        callback.data.split("_")[1]
+    )
+
+
+    await bot.send_message(
+        user_id,
         """
-✅ Сообщение отправлено пользователю.
+❌ Ваша заявка была закрыта.
+
+Спасибо за обращение ❤️
         """
     )
 
 
-    await state.clear()
+    await callback.message.answer(
+        "✅ Заявка закрыта."
+    )
+
+
+    await callback.answer()
 
 
 
-# =========================
+# ==========================
 # СБРОС ЛИМИТОВ
-# =========================
+# ==========================
 
-@dp.message(Command("reset"))
+@dp.callback_query(F.data == "reset_limits")
 async def reset_limits(
-        message: Message
+        callback: CallbackQuery
 ):
-
-    if message.from_user.id != config.ADMIN_ID:
-        return
-
 
     database.reset_limits()
 
 
-    await message.answer(
+    await callback.message.answer(
         """
-🔄 Лимиты всех пользователей сброшены.
+🔄 Лимиты заявок сброшены.
 
-Теперь все снова могут отправлять заявки.
+Теперь пользователи снова могут отправлять заявки.
         """
     )
 
 
+    await callback.answer()
 
-# =========================
+
+
+# ==========================
 # ЗАПУСК
-# =========================
+# ==========================
 
 async def main():
-    database.create_tables()
 
-    print("Bot started")
-
+    await database.create_tables()
 
     await dp.start_polling(bot)
 
 
 
 if __name__ == "__main__":
+
     asyncio.run(main())
