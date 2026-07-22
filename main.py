@@ -6,6 +6,21 @@ from config import BOT_TOKEN,ADMIN_ID
 from database import add_request
 
 bot=Bot(BOT_TOKEN)
+def admin_keyboard(uid):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Принять",
+                    callback_data=f"accept_{uid}"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить",
+                    callback_data=f"reject_{uid}"
+                )
+            ]
+        ]
+    )
 dp=Dispatcher()
 data={}
 
@@ -31,9 +46,38 @@ async def photo(m):
     if uid in data:
         add_request(uid,data[uid]["amount"],m.photo[-1].file_id)
         await m.answer("Заявка отправлена на проверку")
-        await bot.send_photo(ADMIN_ID,m.photo[-1].file_id,caption=f"Заявка от {uid}\n{data[uid]['amount']}")
+        await bot.send_photo(
+    ADMIN_ID,
+    m.photo[-1].file_id,
+    caption=f"📩 Новая заявка\n\n👤 ID: {uid}\n💰 Сумма: {data[uid]['amount']}",
+    reply_markup=admin_keyboard(uid)
+)
 
 async def main():
     await dp.start_polling(bot)
+@dp.callback_query()
+async def admin_action(c):
+    action, uid = c.data.split("_")
 
+    if action == "accept":
+        await bot.send_message(
+            int(uid),
+            "✅ Ваша заявка принята!"
+        )
+
+        await c.message.edit_caption(
+            caption=c.message.caption + "\n\n✅ ПРИНЯТО"
+        )
+
+    elif action == "reject":
+        await bot.send_message(
+            int(uid),
+            "❌ Ваша заявка отклонена."
+        )
+
+        await c.message.edit_caption(
+            caption=c.message.caption + "\n\n❌ ОТКЛОНЕНО"
+        )
+
+    await c.answer()
 asyncio.run(main())
