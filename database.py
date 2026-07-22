@@ -2,27 +2,16 @@ import sqlite3
 import time
 
 
-DB = "database.db"
+DB = "bot.db"
 
-
-# =========================
-# ПОДКЛЮЧЕНИЕ
-# =========================
 
 def connect():
     return sqlite3.connect(DB)
 
 
-
-# =========================
-# СОЗДАНИЕ ТАБЛИЦ
-# =========================
-
 def create_tables():
-
     db = connect()
     cursor = db.cursor()
-
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users(
@@ -32,37 +21,39 @@ def create_tables():
     )
     """)
 
-
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS requests(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         amount TEXT,
         photo TEXT,
-        status TEXT
+        status TEXT DEFAULT 'open'
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS chats(
+        user_id INTEGER PRIMARY KEY
+    )
+    """)
 
     db.commit()
     db.close()
 
 
 
-# =========================
-# ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ
-# =========================
+# =====================
+# Пользователи
+# =====================
 
 def add_user(user_id, username):
 
     db = connect()
     cursor = db.cursor()
 
-
     cursor.execute(
         """
-        INSERT OR IGNORE INTO users
-        (id, username)
+        INSERT OR IGNORE INTO users(id, username)
         VALUES (?,?)
         """,
         (
@@ -71,31 +62,28 @@ def add_user(user_id, username):
         )
     )
 
-
     db.commit()
     db.close()
 
 
 
-# =========================
-# ПРОВЕРКА ЛИМИТА 12 ЧАСОВ
-# =========================
+# =====================
+# Лимит 12 часов
+# =====================
 
 def check_limit(user_id):
 
     db = connect()
     cursor = db.cursor()
 
-
     cursor.execute(
         """
-        SELECT last_request
+        SELECT last_request 
         FROM users
         WHERE id=?
         """,
         (user_id,)
     )
-
 
     result = cursor.fetchone()
 
@@ -108,31 +96,17 @@ def check_limit(user_id):
 
     last = result[0]
 
-
-    if last == 0:
+    if time.time() - last >= 43200:
         return True
-
-
-    now = int(time.time())
-
-
-    if now - last >= 43200:
-        return True
-
 
     return False
 
 
 
-# =========================
-# УСТАНОВИТЬ ЛИМИТ
-# =========================
-
 def set_limit(user_id):
 
     db = connect()
     cursor = db.cursor()
-
 
     cursor.execute(
         """
@@ -146,42 +120,50 @@ def set_limit(user_id):
         )
     )
 
+    db.commit()
+    db.close()
+
+
+
+def reset_limits():
+
+    db = connect()
+    cursor = db.cursor()
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET last_request=0
+        """
+    )
 
     db.commit()
     db.close()
 
 
 
-# =========================
-# СОЗДАНИЕ ЗАЯВКИ
-# =========================
+# =====================
+# Заявки
+# =====================
 
-def create_request(
-        user_id,
-        amount,
-        photo
-):
+def create_request(user_id, amount, photo):
 
     db = connect()
     cursor = db.cursor()
 
-
     cursor.execute(
         """
-        INSERT INTO requests
-        (
+        INSERT INTO requests(
         user_id,
         amount,
-        photo,
-        status
+        photo
         )
-        VALUES (?,?,?,?)
+        VALUES(?,?,?)
         """,
         (
             user_id,
             amount,
-            photo,
-            "open"
+            photo
         )
     )
 
@@ -197,15 +179,10 @@ def create_request(
 
 
 
-# =========================
-# ЗАКРЫТЬ ЗАЯВКУ
-# =========================
-
 def close_request(request_id):
 
     db = connect()
     cursor = db.cursor()
-
 
     cursor.execute(
         """
@@ -222,23 +199,61 @@ def close_request(request_id):
 
 
 
-# =========================
-# СБРОС ВСЕХ ЛИМИТОВ
-# =========================
+# =====================
+# Переписка
+# =====================
 
-def reset_limits():
+def set_chat(user_id):
 
     db = connect()
     cursor = db.cursor()
 
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO chats(user_id)
+        VALUES(?)
+        """,
+        (user_id,)
+    )
+
+    db.commit()
+    db.close()
+
+
+
+def get_chat():
+
+    db = connect()
+    cursor = db.cursor()
 
     cursor.execute(
         """
-        UPDATE users
-        SET last_request=0
+        SELECT user_id
+        FROM chats
+        LIMIT 1
         """
     )
 
+    result = cursor.fetchone()
+
+    db.close()
+
+
+    if result:
+        return result[0]
+
+    return None
+
+
+
+def clear_chat():
+
+    db = connect()
+    cursor = db.cursor()
+
+    cursor.execute(
+        "DELETE FROM chats"
+    )
 
     db.commit()
     db.close()
